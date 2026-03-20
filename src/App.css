@@ -1,42 +1,77 @@
 #root {
-  max-width: 1280px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 2rem;
-  text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+h1,
+h2 {
+  margin: 0;
 }
 
 .card {
-  padding: 2em;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+  padding: 1.25rem;
 }
 
-.read-the-docs {
-  color: #888;
+.form {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+input,
+select,
+button {
+  border: 1px solid #d0d7e2;
+  border-radius: 8px;
+  font: inherit;
+  padding: 0.6rem 0.75rem;
+}
+
+button {
+  background: #111827;
+  color: #fff;
+  cursor: pointer;
+  justify-self: start;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.error {
+  color: #b00020;
+}
+
+.table-wrapper {
+  margin-top: 1rem;
+  overflow-x: auto;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e6eaf0;
+  padding: 0.6rem;
+  text-align: left;
 }
