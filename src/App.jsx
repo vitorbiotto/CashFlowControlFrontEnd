@@ -8,6 +8,7 @@ const emptyForm = {
   amount: '',
   type: 'EXPENSE',
   category: '',
+  categoryId: null,
   description: '',
 }
 
@@ -36,23 +37,45 @@ function sortByNewest(first, second) {
   return new Date(second.date) - new Date(first.date)
 }
 
+function normalizeCategory(category) {
+  if (category && typeof category === 'object') {
+    return {
+      id: category.id ?? null,
+      name: category.name ?? category.nome ?? category.description ?? category.descricao ?? 'Sem categoria',
+    }
+  }
+
+  return {
+    id: null,
+    name: category || 'Sem categoria',
+  }
+}
+
 function normalizeTransaction(transaction) {
+  const category = normalizeCategory(transaction.category ?? transaction.categoria)
+
   return {
     id: transaction.id,
     date: transaction.date || transaction.data || '',
     amount: Number(transaction.amount ?? transaction.valor ?? 0),
     type: normalizeType(transaction.type ?? transaction.tipo),
-    category: transaction.category ?? transaction.categoria ?? 'Sem categoria',
+    category: category.name,
+    categoryId: category.id,
     description: transaction.description ?? transaction.descricao ?? '',
   }
 }
 
 function toPayload(form) {
+  const categoryName = form.category.trim()
+  const category = form.categoryId
+    ? { id: form.categoryId, name: categoryName }
+    : { name: categoryName }
+
   return {
     date: form.date,
     amount: Number(form.amount),
     type: form.type,
-    category: form.category,
+    category,
     description: form.description,
   }
 }
@@ -153,6 +176,7 @@ function App() {
       amount: `${selectedTransaction.amount}`,
       type: selectedTransaction.type,
       category: selectedTransaction.category,
+      categoryId: selectedTransaction.categoryId,
       description: selectedTransaction.description,
     })
     setIsFormOpen(true)
