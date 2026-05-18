@@ -20,7 +20,7 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
 })
 
-const endpointCandidates = ['/transactions', '/transacoes']
+const endpointCandidates = ['/api/v1/transactions', '/transactions']
 
 function normalizeType(value) {
   const normalized = `${value ?? ''}`.trim().toUpperCase()
