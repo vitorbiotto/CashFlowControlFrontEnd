@@ -8,8 +8,13 @@ const emptyForm = {
   amount: '',
   type: 'EXPENSE',
   category: '',
-  categoryId: null,
+  categoryId: '',
   description: '',
+}
+
+const emptyCategoryForm = {
+  id: null,
+  name: '',
 }
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
@@ -21,7 +26,16 @@ const dateFormatter = new Intl.DateTimeFormat('pt-BR', {
   dateStyle: 'short',
 })
 
-const endpointCandidates = ['/api/v1/transactions', '/transactions']
+const transactionEndpointCandidates = ['/api/v1/transactions', '/transactions']
+const categoryEndpointCandidates = ['/api/v1/categories', '/categories']
+
+function getItemsFromResponse(data) {
+  return Array.isArray(data)
+    ? data
+    : Array.isArray(data?.content)
+      ? data.content
+      : []
+}
 
 function normalizeType(value) {
   const normalized = `${value ?? ''}`.trim().toUpperCase()
@@ -35,6 +49,10 @@ function normalizeType(value) {
 
 function sortByNewest(first, second) {
   return new Date(second.date) - new Date(first.date)
+}
+
+function sortByName(first, second) {
+  return first.name.localeCompare(second.name, 'pt-BR', { sensitivity: 'base' })
 }
 
 function normalizeCategory(category) {
@@ -60,16 +78,16 @@ function normalizeTransaction(transaction) {
     amount: Number(transaction.amount ?? transaction.valor ?? 0),
     type: normalizeType(transaction.type ?? transaction.tipo),
     category: category.name,
-    categoryId: category.id,
+    categoryId: category.id ? `${category.id}` : '',
     description: transaction.description ?? transaction.descricao ?? '',
   }
 }
 
-function toPayload(form) {
-  const categoryName = form.category.trim()
-  const category = form.categoryId
-    ? { id: form.categoryId, name: categoryName }
-    : { name: categoryName }
+function toPayload(form, categories) {
+  const selectedCategory = categories.find((category) => `${category.id}` === `${form.categoryId}`)
+  const category = selectedCategory
+    ? { id: selectedCategory.id, name: selectedCategory.name }
+    : { id: Number(form.categoryId) }
 
   return {
     date: form.date,
@@ -82,17 +100,28 @@ function toPayload(form) {
 
 function App() {
   const [transactions, setTransactions] = useState([])
+  const [categories, setCategories] = useState([])
   const [activeView, setActiveView] = useState('dashboard')
   const [loading, setLoading] = useState(true)
+  const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [categorySaving, setCategorySaving] = useState(false)
   const [error, setError] = useState('')
+  const [categoryError, setCategoryError] = useState('')
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [formData, setFormData] = useState(emptyForm)
+  const [categoryForm, setCategoryForm] = useState(emptyCategoryForm)
   const [selectedTransactionId, setSelectedTransactionId] = useState(null)
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null)
 
   const selectedTransaction = useMemo(
     () => transactions.find((transaction) => transaction.id === selectedTransactionId) ?? null,
     [selectedTransactionId, transactions],
+  )
+
+  const selectedCategory = useMemo(
+    () => categories.find((category) => category.id === selectedCategoryId) ?? null,
+    [categories, selectedCategoryId],
   )
 
   const expenses = useMemo(
@@ -116,13 +145,12 @@ function App() {
     }
   }, [expenses, incomes])
 
-
-  const requestWithFallback = useCallback(async (method, payload) => {
+  const requestWithFallback = useCallback(async (method, endpoints = transactionEndpointCandidates) => {
     let lastError = null
 
-    for (const endpoint of endpointCandidates) {
+    for (const endpoint of endpoints) {
       try {
-        return await method(endpoint, payload)
+        return await method(endpoint)
       } catch (requestError) {
         lastError = requestError
 
@@ -141,11 +169,7 @@ function App() {
 
     try {
       const response = await requestWithFallback((endpoint) => api.get(endpoint))
-      const items = Array.isArray(response.data)
-        ? response.data
-        : Array.isArray(response.data?.content)
-          ? response.data.content
-          : []
+      const items = getItemsFromResponse(response.data)
 
       setTransactions(items.map(normalizeTransaction).sort(sortByNewest))
     } catch (requestError) {
@@ -156,9 +180,27 @@ function App() {
     }
   }, [requestWithFallback])
 
+  const loadCategories = useCallback(async () => {
+    setCategoriesLoading(true)
+    setCategoryError('')
+
+    try {
+      const response = await requestWithFallback((endpoint) => api.get(endpoint), categoryEndpointCandidates)
+      const items = getItemsFromResponse(response.data)
+
+      setCategories(items.map(normalizeCategory).sort(sortByName))
+    } catch (requestError) {
+      setCategoryError('Não foi possível carregar as categorias. Confira se o backend está disponível e se o endpoint de categorias está correto.')
+      console.error(requestError)
+    } finally {
+      setCategoriesLoading(false)
+    }
+  }, [requestWithFallback])
+
   useEffect(() => {
     loadTransactions()
-  }, [loadTransactions])
+    loadCategories()
+  }, [loadTransactions, loadCategories])
 
   function openCreateForm() {
     setFormData(emptyForm)
@@ -189,6 +231,17 @@ function App() {
 
   function handleInputChange(event) {
     const { name, value } = event.target
+
+    if (name === 'categoryId') {
+      const selectedOption = categories.find((category) => `${category.id}` === value)
+      setFormData((current) => ({
+        ...current,
+        categoryId: value,
+        category: selectedOption?.name ?? '',
+      }))
+      return
+    }
+
     setFormData((current) => ({ ...current, [name]: value }))
   }
 
@@ -198,7 +251,7 @@ function App() {
     setError('')
 
     try {
-      const payload = toPayload(formData)
+      const payload = toPayload(formData, categories)
 
       if (formData.id) {
         await requestWithFallback((endpoint) => api.put(`${endpoint}/${formData.id}`, payload))
@@ -239,6 +292,88 @@ function App() {
     }
   }
 
+  function handleCategoryInputChange(event) {
+    const { value } = event.target
+    setCategoryForm((current) => ({ ...current, name: value }))
+  }
+
+  function startCategoryEdit() {
+    if (!selectedCategory) {
+      return
+    }
+
+    setCategoryForm({
+      id: selectedCategory.id,
+      name: selectedCategory.name,
+    })
+  }
+
+  function cancelCategoryEdit() {
+    setCategoryForm(emptyCategoryForm)
+  }
+
+  async function handleCategorySubmit(event) {
+    event.preventDefault()
+    setCategorySaving(true)
+    setCategoryError('')
+
+    const payload = { name: categoryForm.name.trim() }
+
+    try {
+      if (categoryForm.id) {
+        await requestWithFallback((endpoint) => api.put(`${endpoint}/${categoryForm.id}`, payload), categoryEndpointCandidates)
+      } else {
+        await requestWithFallback((endpoint) => api.post(endpoint, payload), categoryEndpointCandidates)
+      }
+
+      setCategoryForm(emptyCategoryForm)
+      await loadCategories()
+      await loadTransactions()
+    } catch (requestError) {
+      setCategoryError('Não foi possível salvar a categoria. Verifique os dados preenchidos e a integração com o backend.')
+      console.error(requestError)
+    } finally {
+      setCategorySaving(false)
+    }
+  }
+
+  async function handleCategoryDelete() {
+    if (!selectedCategory) {
+      return
+    }
+
+    const isConfirmed = window.confirm('Deseja realmente excluir a categoria selecionada?')
+
+    if (!isConfirmed) {
+      return
+    }
+
+    setCategoryError('')
+
+    try {
+      await requestWithFallback((endpoint) => api.delete(`${endpoint}/${selectedCategory.id}`), categoryEndpointCandidates)
+      setSelectedCategoryId(null)
+      setCategoryForm(emptyCategoryForm)
+      await loadCategories()
+      await loadTransactions()
+    } catch (requestError) {
+      setCategoryError('Não foi possível excluir a categoria. Verifique se ela não está vinculada a transações.')
+      console.error(requestError)
+    }
+  }
+
+  const contentEyebrow = activeView === 'dashboard'
+    ? 'Resumo geral'
+    : activeView === 'transactions'
+      ? 'Controle de movimentações'
+      : 'Cadastro de categorias'
+
+  const contentTitle = activeView === 'dashboard'
+    ? 'Visão consolidada da conta'
+    : activeView === 'transactions'
+      ? 'Receitas e despesas cadastradas'
+      : 'Categorias disponíveis para as transações'
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -265,20 +400,21 @@ function App() {
           >
             Transações
           </button>
+          <button
+            className={activeView === 'categories' ? 'nav-button nav-button--active' : 'nav-button'}
+            onClick={() => setActiveView('categories')}
+            type="button"
+          >
+            Categorias
+          </button>
         </nav>
       </aside>
 
       <main className="content">
         <header className="content__header">
           <div>
-            <p className="content__eyebrow">
-              {activeView === 'dashboard' ? 'Resumo geral' : 'Controle de movimentações'}
-            </p>
-            <h2>
-              {activeView === 'dashboard'
-                ? 'Visão consolidada da conta'
-                : 'Receitas e despesas cadastradas'}
-            </h2>
+            <p className="content__eyebrow">{contentEyebrow}</p>
+            <h2>{contentTitle}</h2>
           </div>
 
           {activeView === 'transactions' ? (
@@ -289,8 +425,17 @@ function App() {
               <button className="danger-button" onClick={handleDelete} type="button" disabled={!selectedTransaction}>
                 Excluir selecionada
               </button>
-              <button className="primary-button" onClick={openCreateForm} type="button">
+              <button className="primary-button" onClick={openCreateForm} type="button" disabled={categories.length === 0}>
                 Nova transação
+              </button>
+            </div>
+          ) : activeView === 'categories' ? (
+            <div className="header-actions">
+              <button className="secondary-button" onClick={startCategoryEdit} type="button" disabled={!selectedCategory}>
+                Editar selecionada
+              </button>
+              <button className="danger-button" onClick={handleCategoryDelete} type="button" disabled={!selectedCategory}>
+                Excluir selecionada
               </button>
             </div>
           ) : (
@@ -300,7 +445,8 @@ function App() {
           )}
         </header>
 
-        {error ? <div className="alert">{error}</div> : null}
+        {error && activeView !== 'categories' ? <div className="alert">{error}</div> : null}
+        {categoryError ? <div className="alert">{categoryError}</div> : null}
 
         {activeView === 'dashboard' ? (
           <section className="dashboard-grid">
@@ -358,8 +504,14 @@ function App() {
               )}
             </article>
           </section>
-        ) : (
+        ) : activeView === 'transactions' ? (
           <section className="transactions-layout">
+            {categories.length === 0 && !categoriesLoading ? (
+              <article className="alert transactions-layout__full">
+                Cadastre ao menos uma categoria antes de criar transações.
+              </article>
+            ) : null}
+
             <article className="panel">
               <div className="panel__header">
                 <div>
@@ -393,6 +545,59 @@ function App() {
                 onSelect={setSelectedTransactionId}
                 selectedTransactionId={selectedTransactionId}
                 transactions={incomes}
+              />
+            </article>
+          </section>
+        ) : (
+          <section className="categories-layout">
+            <article className="panel">
+              <div className="panel__header">
+                <div>
+                  <p className="panel__eyebrow">Nova categoria</p>
+                  <h3>{categoryForm.id ? 'Editar categoria' : 'Criar categoria'}</h3>
+                </div>
+              </div>
+
+              <form className="category-form" onSubmit={handleCategorySubmit}>
+                <label>
+                  Nome da categoria
+                  <input
+                    name="name"
+                    placeholder="Ex.: Alimentação"
+                    type="text"
+                    value={categoryForm.name}
+                    onChange={handleCategoryInputChange}
+                    required
+                  />
+                </label>
+
+                <div className="modal__actions">
+                  {categoryForm.id ? (
+                    <button className="secondary-button" onClick={cancelCategoryEdit} type="button">
+                      Cancelar edição
+                    </button>
+                  ) : null}
+                  <button className="primary-button" type="submit" disabled={categorySaving}>
+                    {categorySaving ? 'Salvando...' : categoryForm.id ? 'Salvar categoria' : 'Cadastrar categoria'}
+                  </button>
+                </div>
+              </form>
+            </article>
+
+            <article className="panel">
+              <div className="panel__header">
+                <div>
+                  <p className="panel__eyebrow">Categorias</p>
+                  <h3>Categorias cadastradas</h3>
+                </div>
+                <span className="badge badge--neutral">{categories.length} item(ns)</span>
+              </div>
+
+              <CategoryList
+                categories={categories}
+                loading={categoriesLoading}
+                onSelect={setSelectedCategoryId}
+                selectedCategoryId={selectedCategoryId}
               />
             </article>
           </section>
@@ -444,15 +649,27 @@ function App() {
 
               <label>
                 Categoria
-                <input
-                  name="category"
-                  placeholder="Ex.: Alimentação"
-                  type="text"
-                  value={formData.category}
+                <select
+                  name="categoryId"
+                  value={formData.categoryId}
                   onChange={handleInputChange}
                   required
-                />
+                  disabled={categories.length === 0}
+                >
+                  <option value="">Selecione uma categoria</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
               </label>
+
+              {categories.length === 0 ? (
+                <p className="form-helper transaction-form__full">
+                  Cadastre uma categoria na tela Categorias antes de salvar uma transação.
+                </p>
+              ) : null}
 
               <label className="transaction-form__full">
                 Descrição
@@ -469,7 +686,7 @@ function App() {
                 <button className="secondary-button" onClick={closeForm} type="button">
                   Cancelar
                 </button>
-                <button className="primary-button" type="submit" disabled={saving}>
+                <button className="primary-button" type="submit" disabled={saving || categories.length === 0}>
                   {saving ? 'Salvando...' : formData.id ? 'Salvar alterações' : 'Cadastrar transação'}
                 </button>
               </div>
@@ -522,6 +739,35 @@ function TransactionList({ transactions, loading, emptyMessage, selectedTransact
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function CategoryList({ categories, loading, selectedCategoryId, onSelect }) {
+  if (loading) {
+    return <p className="empty-state">Carregando categorias...</p>
+  }
+
+  if (categories.length === 0) {
+    return <p className="empty-state">Nenhuma categoria cadastrada até o momento.</p>
+  }
+
+  return (
+    <div className="category-list">
+      {categories.map((category) => {
+        const isSelected = category.id === selectedCategoryId
+
+        return (
+          <button
+            className={isSelected ? 'category-list__item category-list__item--selected' : 'category-list__item'}
+            key={category.id}
+            onClick={() => onSelect(category.id)}
+            type="button"
+          >
+            <span>{category.name}</span>
+          </button>
+        )
+      })}
     </div>
   )
 }
