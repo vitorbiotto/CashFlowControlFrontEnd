@@ -15,6 +15,7 @@ const emptyForm = {
 const emptyCategoryForm = {
   id: null,
   name: '',
+  type: 'EXPENSE',
 }
 
 const currencyFormatter = new Intl.NumberFormat('pt-BR', {
@@ -60,12 +61,14 @@ function normalizeCategory(category) {
     return {
       id: category.id ?? null,
       name: category.name ?? category.nome ?? category.description ?? category.descricao ?? 'Sem categoria',
+      type: normalizeType(category.type ?? category.tipo),
     }
   }
 
   return {
     id: null,
     name: category || 'Sem categoria',
+    type: 'EXPENSE',
   }
 }
 
@@ -86,8 +89,8 @@ function normalizeTransaction(transaction) {
 function toPayload(form, categories) {
   const selectedCategory = categories.find((category) => `${category.id}` === `${form.categoryId}`)
   const category = selectedCategory
-    ? { id: selectedCategory.id, name: selectedCategory.name }
-    : { id: Number(form.categoryId) }
+    ? { id: selectedCategory.id, name: selectedCategory.name, type: selectedCategory.type }
+    : { id: Number(form.categoryId), type: form.type }
 
   return {
     date: form.date,
@@ -113,6 +116,11 @@ function App() {
   const [categoryForm, setCategoryForm] = useState(emptyCategoryForm)
   const [selectedTransactionId, setSelectedTransactionId] = useState(null)
   const [selectedCategoryId, setSelectedCategoryId] = useState(null)
+
+  const availableCategories = useMemo(
+    () => categories.filter((category) => category.type === formData.type),
+    [categories, formData.type],
+  )
 
   const selectedTransaction = useMemo(
     () => transactions.find((transaction) => transaction.id === selectedTransactionId) ?? null,
@@ -242,6 +250,16 @@ function App() {
       return
     }
 
+    if (name === 'type') {
+      setFormData((current) => ({
+        ...current,
+        type: value,
+        category: '',
+        categoryId: '',
+      }))
+      return
+    }
+
     setFormData((current) => ({ ...current, [name]: value }))
   }
 
@@ -293,8 +311,8 @@ function App() {
   }
 
   function handleCategoryInputChange(event) {
-    const { value } = event.target
-    setCategoryForm((current) => ({ ...current, name: value }))
+    const { name, value } = event.target
+    setCategoryForm((current) => ({ ...current, [name]: value }))
   }
 
   function startCategoryEdit() {
@@ -305,6 +323,7 @@ function App() {
     setCategoryForm({
       id: selectedCategory.id,
       name: selectedCategory.name,
+      type: selectedCategory.type,
     })
   }
 
@@ -317,7 +336,10 @@ function App() {
     setCategorySaving(true)
     setCategoryError('')
 
-    const payload = { name: categoryForm.name.trim() }
+    const payload = {
+      name: categoryForm.name.trim(),
+      type: categoryForm.type,
+    }
 
     try {
       if (categoryForm.id) {
@@ -571,6 +593,14 @@ function App() {
                   />
                 </label>
 
+                <label>
+                  Tipo da categoria
+                  <select name="type" value={categoryForm.type} onChange={handleCategoryInputChange}>
+                    <option value="EXPENSE">Despesa</option>
+                    <option value="INCOME">Receita</option>
+                  </select>
+                </label>
+
                 <div className="modal__actions">
                   {categoryForm.id ? (
                     <button className="secondary-button" onClick={cancelCategoryEdit} type="button">
@@ -657,7 +687,7 @@ function App() {
                   disabled={categories.length === 0}
                 >
                   <option value="">Selecione uma categoria</option>
-                  {categories.map((category) => (
+                  {availableCategories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.name}
                     </option>
@@ -668,6 +698,12 @@ function App() {
               {categories.length === 0 ? (
                 <p className="form-helper transaction-form__full">
                   Cadastre uma categoria na tela Categorias antes de salvar uma transação.
+                </p>
+              ) : null}
+
+              {categories.length > 0 && availableCategories.length === 0 ? (
+                <p className="form-helper transaction-form__full">
+                  Cadastre uma categoria do tipo {formData.type === 'INCOME' ? 'Receita' : 'Despesa'} para esta transação.
                 </p>
               ) : null}
 
@@ -686,7 +722,7 @@ function App() {
                 <button className="secondary-button" onClick={closeForm} type="button">
                   Cancelar
                 </button>
-                <button className="primary-button" type="submit" disabled={saving || categories.length === 0}>
+                <button className="primary-button" type="submit" disabled={saving || availableCategories.length === 0}>
                   {saving ? 'Salvando...' : formData.id ? 'Salvar alterações' : 'Cadastrar transação'}
                 </button>
               </div>
@@ -765,6 +801,7 @@ function CategoryList({ categories, loading, selectedCategoryId, onSelect }) {
             type="button"
           >
             <span>{category.name}</span>
+            <small>{category.type === 'INCOME' ? 'Receita' : 'Despesa'}</small>
           </button>
         )
       })}

@@ -344,7 +344,8 @@ button:disabled {
 .transaction-form input,
 .transaction-form select,
 .transaction-form textarea,
-.category-form input {
+.category-form input,
+.category-form select {
   width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 14px;
@@ -368,11 +369,18 @@ button:disabled {
 }
 
 .category-list__item {
+  align-items: flex-start;
+  flex-direction: column;
   justify-content: flex-start;
   width: 100%;
   border: 1px solid #dbeafe;
   background: #f8fafc;
   color: #14213d;
+}
+
+.category-list__item small {
+  color: #64748b;
+  font-weight: 600;
 }
 
 .category-list__item:hover {
